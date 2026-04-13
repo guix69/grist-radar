@@ -624,16 +624,13 @@ grist.onRecords(records => {
   updateNav();
 });
 
-grist.onRecord(async record => {
+grist.onRecord(record => {
   if (!record) return;
 
   if (firstLoad) {
     firstLoad = false;
-    // Clé scopée au tableId
-    try {
-      const tableId = await grist.selectedTable.getTableId();
-      storageKey = 'grist_radar_' + tableId;
-    } catch(e) {}
+    // Clé basée sur l'URL — unique par instance hébergée
+    storageKey = 'grist_radar_' + btoa(window.location.href).slice(0, 20);
     loadFromStorage();
     applyLang();
     rebuildGrid();
