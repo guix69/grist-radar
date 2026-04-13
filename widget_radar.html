@@ -521,7 +521,9 @@ function buildAccordion(cat, i) {
 }
 
 function getAccordionIndex(acc) {
-  return Array.from(document.getElementById('accordions').children).indexOf(acc);
+  const accordions = Array.from(document.getElementById('accordions').children)
+    .filter(el => el.classList.contains('accordion'));
+  return accordions.indexOf(acc);
 }
 
 // ── Focus trap ──
@@ -572,8 +574,11 @@ function loadFromStorage() {
 
 // ── Sauvegarde ──
 function saveConfig() {
-  const accordions = document.getElementById('accordions').children;
-  Array.from(accordions).forEach((acc, i) => {
+  // Sélectionne uniquement les accordéons (pas la section titre)
+  const accordions = Array.from(document.getElementById('accordions').children)
+    .filter(el => el.classList.contains('accordion'));
+
+  accordions.forEach((acc, i) => {
     const checked = Array.from(acc.querySelectorAll('input[type="checkbox"]:checked')).map(b => b.dataset.col);
     if (checked.length > 0) {
       config[i].columns = checked;
