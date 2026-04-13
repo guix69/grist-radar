@@ -412,6 +412,13 @@ function renderCharts(record) {
       charts[i].options.scales.r.max = cat.max;
       charts[i].options.scales.r.grid.color = gridColor;
       charts[i].options.scales.r.angleLines.color = gridColor;
+      // Mise à jour du tooltip (descriptions peuvent avoir changé)
+      charts[i].options.plugins.tooltip.callbacks.label = (item) => {
+        const col = cat.columns[item.dataIndex];
+        const lines = [`${t.datasetLabel} : ${item.raw}`];
+        if (col && colDescriptions[col]) lines.push(colDescriptions[col]);
+        return lines;
+      };
       charts[i].update();
     } else {
       const ctx = canvasEl.getContext('2d');
@@ -420,8 +427,26 @@ function renderCharts(record) {
         data: { labels, datasets: [{ label: t.datasetLabel, data, backgroundColor: rgba.bg, borderColor: rgba.border, borderWidth: 2, pointBackgroundColor: rgba.border, pointRadius: 3 }] },
         options: {
           responsive: true,
-          plugins: { legend: { display: false } },
-          scales: { r: { min: 0, max: cat.max, grid: { color: gridColor }, angleLines: { color: gridColor }, ticks: { stepSize: 1, font: { size: 10 } }, pointLabels: { font: { size: 11 } } } }
+          layout: { padding: 20 },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: (items) => {
+                  const idx = items[0]?.dataIndex;
+                  const col = cat.columns[idx];
+                  return (cat.labels[idx] && cat.labels[idx].trim()) ? cat.labels[idx] : (col || '');
+                },
+                label: (item) => {
+                  const col = cat.columns[item.dataIndex];
+                  const lines = [`${t.datasetLabel} : ${item.raw}`];
+                  if (col && colDescriptions[col]) lines.push(colDescriptions[col]);
+                  return lines;
+                }
+              }
+            }
+          },
+          scales: { r: { min: 0, max: cat.max, grid: { color: gridColor }, angleLines: { color: gridColor }, ticks: { stepSize: 1, font: { size: 10 } }, pointLabels: { font: { size: 10 } } } }
         }
       });
     }
@@ -655,6 +680,20 @@ document.getElementById('btn-next').addEventListener('click', () => goTo(current
 // ══════════════════════════════════════════
 // GRIST API
 // ══════════════════════════════════════════
+let colDescriptions = {}; // { colId: description }
+
+async function fetchColDescriptions() {
+  try {
+    const meta = await grist.docApi.fetchTable('_grist_Tables_column');
+    if (meta && meta.colId) {
+      meta.colId.forEach((colId, i) => {
+        const desc = (meta.description[i] || '').trim();
+        if (desc) colDescriptions[colId] = desc;
+      });
+    }
+  } catch(e) {}
+}
+
 grist.ready({ requiredAccess: 'read table' });
 
 grist.onOptions(options => {
@@ -683,10 +722,12 @@ grist.onRecords(records => {
   updateNav();
 });
 
+let firstLoad = true;
+
 grist.onRecord(record => {
   if (!record) return;
-  // ← FIX : mettre à jour les colonnes à chaque record aussi
   allColumns = Object.keys(record).filter(k => k !== 'manualSort');
+  if (firstLoad) { firstLoad = false; fetchColDescriptions(); }
   const idx = allRecords.findIndex(r => r.id === record.id);
   if (idx >= 0) currentIndex = idx;
   updateNav();
