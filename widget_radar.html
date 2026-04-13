@@ -684,7 +684,9 @@ grist.onRecord(record => {
   if (firstLoad) {
     firstLoad = false;
     // Clé basée sur l'URL — unique par instance hébergée
-    storageKey = 'grist_radar_' + btoa(window.location.href).slice(0, 20);
+    // document.referrer = URL du doc Grist parent, unique par document
+    const ref = document.referrer || window.location.href;
+    storageKey = 'grist_radar_' + btoa(ref).slice(0, 24);
     loadFromStorage();
     applyLang();
     rebuildGrid();
