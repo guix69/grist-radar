@@ -56,7 +56,8 @@ Cliquer sur **⚙️** en haut à droite pour ouvrir le panneau de configuration
 
 | Champ | Description |
 |---|---|
-| **Colonne titre** | Colonne affichée dans la topbar (ex. Nom, Identifiant) |
+| **Colonne titre** | Colonne affichée dans la topbar et dans le mode présentation |
+| **Mode présentation** | Afficher ou masquer le bouton ▶ Présentation |
 | Emoji + Titre | Libellé du graphe |
 | Contour | Couleur de l'étoile |
 | Repère | Couleur de la grille de fond |
@@ -74,8 +75,12 @@ Au survol d'un point du graphe, le tooltip affiche :
 
 Cliquer sur **▶ Présentation** pour ouvrir `presenter.html` dans un nouvel onglet :
 - Navigation **← →** au clavier entre les enregistrements
+- Titre de l'enregistrement affiché (depuis la colonne titre configurée)
+- Labels longs automatiquement mis sur plusieurs lignes
 - Bouton **plein écran** natif
 - Compteur de position (**3 / 7**)
+
+> Le bouton **▶ Présentation** peut être masqué depuis le panneau ⚙️ (toggle "Mode présentation").
 
 ### Structure des données
 
@@ -149,7 +154,8 @@ Click **⚙️** at the top right to open the configuration panel.
 
 | Field | Description |
 |---|---|
-| **Title column** | Column shown in the topbar (e.g. Name, ID) |
+| **Title column** | Column shown in the topbar and in presentation mode |
+| **Presentation mode** | Show or hide the ▶ Present button |
 | Emoji + Title | Chart label |
 | Outline | Star colour |
 | Grid | Background grid colour |
@@ -167,8 +173,12 @@ Hovering over a chart point shows:
 
 Click **▶ Present** to open `presenter.html` in a new tab:
 - **← →** keyboard navigation between records
+- Record title displayed (from the configured title column)
+- Long labels automatically wrapped across multiple lines
 - Native **full-screen** button
 - Position counter (**3 / 7**)
+
+> The **▶ Present** button can be hidden from the ⚙️ panel (toggle "Presentation mode").
 
 ### Expected data structure
 

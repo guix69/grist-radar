@@ -7,73 +7,45 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Segoe UI', sans-serif;
-      background: #f5f7fa;
-      display: flex; flex-direction: column;
-      height: 100vh; overflow: hidden;
+      font-family: 'Segoe UI', sans-serif; background: #f5f7fa;
+      display: flex; flex-direction: column; height: 100vh; overflow: hidden;
     }
-
-    /* ── TOPBAR ── */
     #topbar {
-      display: flex; align-items: center;
-      justify-content: space-between;
-      padding: 10px 20px;
-      background: white;
-      border-bottom: 1px solid #e2e8f0;
-      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 20px; background: white; border-bottom: 1px solid #e2e8f0; flex-shrink: 0;
     }
     #titre { font-size: 1.2rem; font-weight: 700; color: #2d3748; }
     #counter { font-size: 0.9rem; color: #718096; }
     #btn-fs {
       background: none; border: 1px solid #cbd5e0; cursor: pointer;
-      font-size: 0.82rem; padding: 5px 12px; border-radius: 6px;
-      color: #718096; transition: all 0.15s;
+      font-size: 0.82rem; padding: 5px 12px; border-radius: 6px; color: #718096; transition: all 0.15s;
     }
     #btn-fs:hover { background: #edf2f7; }
-
-    /* ── GRILLE ── */
     #grilles {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      padding: 16px;
-      flex: 1;
-      overflow: hidden;
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 16px; padding: 16px; flex: 1; overflow: hidden;
     }
     .carte {
-      background: white;
-      border-radius: 10px;
-      padding: 14px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-      display: flex; flex-direction: column;
-      min-height: 0;
+      background: white; border-radius: 10px; padding: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07); display: flex; flex-direction: column; min-height: 0;
     }
     .carte h3 {
       text-align: center; font-size: 0.82rem; color: #555;
-      margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em;
-      flex-shrink: 0;
+      margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0;
     }
     .carte canvas { flex: 1; min-height: 0; }
-
-    /* ── NAV ── */
     #nav-bar {
-      display: flex; align-items: center; justify-content: center;
-      gap: 24px; padding: 12px;
-      background: white; border-top: 1px solid #e2e8f0;
-      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; gap: 24px; padding: 12px;
+      background: white; border-top: 1px solid #e2e8f0; flex-shrink: 0;
     }
     .btn-nav {
-      background: #edf2f7; border: none; cursor: pointer;
-      color: #2d3748; font-size: 1.6rem; width: 48px; height: 48px;
-      border-radius: 50%; display: flex; align-items: center;
-      justify-content: center; transition: background 0.15s;
-      user-select: none;
+      background: #edf2f7; border: none; cursor: pointer; color: #2d3748;
+      font-size: 1.6rem; width: 48px; height: 48px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; transition: background 0.15s; user-select: none;
     }
     .btn-nav:hover { background: #4299e1; color: white; }
     .btn-nav:disabled { background: #f7fafc; color: #cbd5e0; cursor: default; }
     #nav-counter { font-size: 1rem; color: #4a5568; min-width: 70px; text-align: center; }
-
-    /* ── EN ATTENTE ── */
     #waiting {
       display: flex; align-items: center; justify-content: center;
       flex: 1; color: #a0aec0; font-style: italic; font-size: 1rem;
@@ -98,12 +70,39 @@
 </div>
 
 <script>
-let config = [];
-let records = [];
+let config       = [];
+let records      = [];
 let currentIndex = 0;
-let charts = {};
+let charts       = {};
+let titleCol     = '';
 
-// ─── CHARGEMENT DEPUIS LE HASH URL ───────────────────────────────
+// ─── UTILITAIRES ──────────────────────────────────────────────────
+function hexToRgba(hex) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return { bg: `rgba(${r},${g},${b},0.2)`, border: `rgba(${r},${g},${b},1)` };
+}
+
+function wrapLabel(str, maxLen = 16) {
+  const s = str.replace(/_/g, ' ');
+  if (s.length <= maxLen) return s;
+  const words = s.split(' ');
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (test.length > maxLen && cur) { lines.push(cur); cur = w; }
+    else cur = test;
+  }
+  if (cur) lines.push(cur);
+  return lines.length > 1 ? lines : s;
+}
+
+function getTitle(record) {
+  if (titleCol && record[titleCol] != null) return String(record[titleCol]).trim();
+  return `${record.Prenom || record.prenom || ''} ${record.Nom || record.nom || ''}`.trim() || `#${record.id}`;
+}
+
+// ─── CHARGEMENT ───────────────────────────────────────────────────
 function init() {
   try {
     const hash = window.location.hash.slice(1);
@@ -111,11 +110,21 @@ function init() {
       document.getElementById('waiting').textContent = 'Aucune donnée reçue. Ouvrez cette page depuis le widget Grist.';
       return;
     }
-    const json    = decodeURIComponent(escape(atob(hash)));
-    const payload = JSON.parse(json);
-    config       = payload.config;
-    records      = payload.records;
-    currentIndex = payload.index || 0;
+    const payload = JSON.parse(decodeURIComponent(escape(atob(hash))));
+
+    // Compatibilité : ancien format (config = tableau) et nouveau (config = { config, titleCol })
+    if (Array.isArray(payload.config)) {
+      config = payload.config;
+    } else if (payload.config && Array.isArray(payload.config.config)) {
+      config   = payload.config.config;
+      titleCol = payload.config.titleCol || '';
+    } else {
+      config = payload.config || [];
+    }
+    if (payload.titleCol !== undefined) titleCol = payload.titleCol;
+
+    records      = payload.records || [];
+    currentIndex = payload.index  || 0;
 
     document.getElementById('waiting').style.display = 'none';
     document.getElementById('grilles').style.display = 'grid';
@@ -129,7 +138,7 @@ function init() {
 
 init();
 
-// ─── CONSTRUCTION GRILLE ──────────────────────────────────────────
+// ─── GRILLE ───────────────────────────────────────────────────────
 function buildGrid() {
   Object.values(charts).forEach(c => c && c.destroy());
   charts = {};
@@ -143,10 +152,10 @@ function buildGrid() {
   });
 }
 
-// ─── RENDU GRAPHES ────────────────────────────────────────────────
+// ─── RENDU ────────────────────────────────────────────────────────
 function renderCharts(record) {
   if (!record) return;
-  document.getElementById('titre').textContent = `${record.Prenom || ''} ${record.Nom || ''}`;
+  document.getElementById('titre').textContent = getTitle(record);
 
   config.forEach((cat, i) => {
     const titleEl  = document.getElementById(`title-${i}`);
@@ -154,8 +163,12 @@ function renderCharts(record) {
     if (!titleEl || !canvasEl) return;
 
     titleEl.textContent = `${cat.emoji} ${cat.title}`;
-    const labels    = cat.columns.map((col, j) => cat.labels[j] || col);
-    const data      = cat.columns.map(col => record[col] ?? 0);
+
+    const labels = cat.columns.map((col, j) => {
+      const lbl = (cat.labels[j] && cat.labels[j].trim()) ? cat.labels[j] : col;
+      return wrapLabel(lbl);
+    });
+    const data      = cat.columns.map(col => { const v = record[col]; return v == null ? 0 : Number(v) || 0; });
     const rgba      = hexToRgba(cat.color);
     const gridColor = cat.gridColor || '#cbd5e0';
 
@@ -173,23 +186,12 @@ function renderCharts(record) {
       const ctx = canvasEl.getContext('2d');
       charts[i] = new Chart(ctx, {
         type: 'radar',
-        data: {
-          labels,
-          datasets: [{ label: 'Score', data, backgroundColor: rgba.bg, borderColor: rgba.border, borderWidth: 2, pointBackgroundColor: rgba.border, pointRadius: 3 }]
-        },
+        data: { labels, datasets: [{ label: 'Score', data, backgroundColor: rgba.bg, borderColor: rgba.border, borderWidth: 2, pointBackgroundColor: rgba.border, pointRadius: 3 }] },
         options: {
-          responsive: true,
-          maintainAspectRatio: false,
+          responsive: true, maintainAspectRatio: false,
+          layout: { padding: 20 },
           plugins: { legend: { display: false } },
-          scales: {
-            r: {
-              min: 0, max: cat.max,
-              grid: { color: gridColor },
-              angleLines: { color: gridColor },
-              ticks: { stepSize: 1, font: { size: 11 } },
-              pointLabels: { font: { size: 13 } }
-            }
-          }
+          scales: { r: { min: 0, max: cat.max, grid: { color: gridColor }, angleLines: { color: gridColor }, ticks: { stepSize: 1, font: { size: 11 } }, pointLabels: { font: { size: 13 } } } }
         }
       });
     }
@@ -202,27 +204,23 @@ function goTo(index) {
   currentIndex = index;
   renderCharts(records[currentIndex]);
   updateNav();
-
 }
 
 function updateNav() {
-  document.getElementById('nav-counter').textContent =
-    records.length > 0 ? `${currentIndex + 1} / ${records.length}` : '— / —';
+  const txt = records.length > 0 ? `${currentIndex + 1} / ${records.length}` : '— / —';
+  document.getElementById('nav-counter').textContent = txt;
+  document.getElementById('counter').textContent = records.length > 0 ? txt : '';
   document.getElementById('btn-prev').disabled = currentIndex <= 0;
   document.getElementById('btn-next').disabled = currentIndex >= records.length - 1;
-  document.getElementById('counter').textContent =
-    records.length > 0 ? `${currentIndex + 1} / ${records.length}` : '';
 }
 
 document.getElementById('btn-prev').addEventListener('click', () => goTo(currentIndex - 1));
 document.getElementById('btn-next').addEventListener('click', () => goTo(currentIndex + 1));
-
 document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft')  goTo(currentIndex - 1);
   if (e.key === 'ArrowRight') goTo(currentIndex + 1);
 });
 
-// ─── PLEIN ÉCRAN NATIF ────────────────────────────────────────────
 document.getElementById('btn-fs').addEventListener('click', () => {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen();
@@ -233,17 +231,8 @@ document.getElementById('btn-fs').addEventListener('click', () => {
   }
 });
 document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement)
-    document.getElementById('btn-fs').textContent = '⛶ Plein écran';
+  if (!document.fullscreenElement) document.getElementById('btn-fs').textContent = '⛶ Plein écran';
 });
-
-// ─── UTILITAIRES ──────────────────────────────────────────────────
-function hexToRgba(hex) {
-  const r = parseInt(hex.slice(1,3),16);
-  const g = parseInt(hex.slice(3,5),16);
-  const b = parseInt(hex.slice(5,7),16);
-  return { bg: `rgba(${r},${g},${b},0.2)`, border: `rgba(${r},${g},${b},1)` };
-}
 </script>
 </body>
 </html>
