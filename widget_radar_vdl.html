@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Radar scores élève</title>
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f5f7fa; }
+    #topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px; background: white; border-bottom: 1px solid #e2e8f0;
+      position: sticky; top: 0; z-index: 10;
+    }
+    #topbar h2 { font-size: 0.95rem; color: #2d3748; }
+
+    #grilles {
+/*      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 12px; padding: 12px;
+*/    }
+    .carte {
+      background: white; border-radius: 10px; padding: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    }
+    .carte h3 {
+      text-align: center; font-size: 0.78rem; color: #4a5568;
+      margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    canvas { max-height: 200px; }
+
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <div>
+    <h2 id="titre" hidden></h2>
+    <p id="aucun"></p>
+  </div>
+</div>
+
+<main id="grilles" aria-live="polite" aria-label=""></main>
+
+
+
+<script>
+
+let titleCol     = '';
+let allColumns   = [];
+let currentRecord = null;
+let charts       = {};
+let allRecords   = [];
+let currentIndex = 0;
+
+// ══════════════════════════════════════════
+// UTILITAIRES
+// ══════════════════════════════════════════
+function hexToRgba(hex) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return { bg: `rgba(${r},${g},${b},0.2)`, border: `rgba(${r},${g},${b},1)` };
+}
+
+// Retour à la ligne automatique pour les labels de pointLabels
+function wrapLabel(str, maxLen = 16) {
+  const s = str.replace(/_/g, ' ');
+  if (s.length <= maxLen) return s;
+  const words = s.split(' ');
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (test.length > maxLen && cur) { lines.push(cur); cur = w; }
+    else cur = test;
+  }
+  if (cur) lines.push(cur);
+  return lines.length > 1 ? lines : s;
+}
+
+// ══════════════════════════════════════════
+// RENDU GRAPHES
+// ══════════════════════════════════════════
+function rebuildGrid() {
+  const grilles = document.getElementById('grilles');
+  Object.values(charts).forEach(c => c && c.destroy());
+  charts = {};
+  grilles.innerHTML = '';
+
+  i=0;
+  const card = document.createElement('div');
+  card.className = 'carte'; card.id = `card-${i}`;
+  const h3 = document.createElement('h3');
+  h3.id = `title-${i}`; h3.textContent = `Fournisseur : `;
+  const cv = document.createElement('canvas');
+  cv.id = `chart-${i}`; cv.setAttribute('role', 'img');
+  cv.setAttribute('aria-label', 'Titre'); cv.textContent = 'Rien';
+  card.appendChild(h3); card.appendChild(cv); grilles.appendChild(card);
+
+}
+
+function renderCharts(record) {
+  currentRecord = record;
+  document.getElementById('aucun').hidden = true;
+  const titreEl = document.getElementById('titre');
+  titreEl.hidden = false;
+  // Titre : colonne choisie ou fallback Prenom/Nom
+  titreEl.textContent = (titleCol && record[titleCol] != null)
+    ? String(record[titleCol]).trim()
+    : `${record.Prenom || record.prenom || ''} ${record.Nom || record.nom || ''}`.trim() || `${record.Fournisseur}`;
+
+
+  const CONFIG = [
+    {
+      emoji: '🗣', title: `${record.Fournisseur}`, color: '#63b3ed', gridColor: '#cbd5e0', max: 5,
+      columns: ['lang_comprehension','lang_fluence','lang_expression_orale','lang_expression_ecrite','lang_vocabulaire'],
+      labels:  ['Compréhension','Fluence','Expr. orale','Expr. écrite','Vocabulaire']
+    }
+  ];
+
+  const PALETTE = ['#63b3ed','#9ae6b4','#fc814a','#b794f4','#f6ad55','#fc8181','#4fd1c5','#667eea'];
+  const EXCLUDED_COLS = new Set(['id', 'manualSort']);
+
+  let config       = JSON.parse(JSON.stringify(CONFIG));
+  config.forEach((cat, i) => {
+    const titleEl  = document.getElementById(`title-${i}`);
+    const canvasEl = document.getElementById(`chart-${i}`);
+    if (!titleEl || !canvasEl) return;
+    titleEl.textContent = config.title;
+    canvasEl.setAttribute('aria-label', `Fournisseur : ${cat.title}`);
+
+    // Labels avec retour à la ligne automatique
+    const labels = cat.columns.map((col, j) => {
+      const lbl = (cat.labels[j] && cat.labels[j].trim()) ? cat.labels[j] : col;
+      return wrapLabel(lbl);
+    });
+    const data      = cat.columns.map(col => { const v = record[col]; return (v == null) ? 0 : Number(v) || 0; });
+    const rgba      = hexToRgba(cat.color);
+    const gridColor = cat.gridColor || '#cbd5e0';
+
+    if (charts[i]) {
+      charts[i].data.labels = labels;
+      charts[i].data.datasets[0].data = data;
+      charts[i].data.datasets[0].label = 'datasetLabel';
+      charts[i].data.datasets[0].backgroundColor = rgba.bg;
+      charts[i].data.datasets[0].borderColor = rgba.border;
+      charts[i].data.datasets[0].pointBackgroundColor = rgba.border;
+      charts[i].options.scales.r.max = cat.max;
+      charts[i].options.scales.r.grid.color = gridColor;
+      charts[i].options.scales.r.angleLines.color = gridColor;
+      // Mise à jour du tooltip (descriptions peuvent avoir changé)
+      charts[i].options.plugins.tooltip.callbacks.label = (item) => {
+        const col = cat.columns[item.dataIndex];
+        const lines = [`${t.datasetLabel} : ${item.raw}`];
+        if (col && colDescriptions[col]) lines.push(colDescriptions[col]);
+        return lines;
+      };
+      charts[i].update();
+    } else {
+      const ctx = canvasEl.getContext('2d');
+      charts[i] = new Chart(ctx, {
+        type: 'radar',
+        data: { labels, datasets: [{ label: 'datasetLabel', data, backgroundColor: rgba.bg, borderColor: rgba.border, borderWidth: 2, pointBackgroundColor: rgba.border, pointRadius: 3 }] },
+        options: {
+          responsive: true,
+          layout: { padding: 20 },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: (items) => {
+                  const idx = items[0]?.dataIndex;
+                  const col = cat.columns[idx];
+                  return (cat.labels[idx] && cat.labels[idx].trim()) ? cat.labels[idx] : (col || '');
+                },
+                label: (item) => {
+                  const col = cat.columns[item.dataIndex];
+                  const lines = [`${t.datasetLabel} : ${item.raw}`];
+                  if (col && colDescriptions[col]) lines.push(colDescriptions[col]);
+                  return lines;
+                }
+              }
+            }
+          },
+          scales: { r: { min: 0, max: cat.max, grid: { color: gridColor }, angleLines: { color: gridColor }, ticks: { stepSize: 1, font: { size: 10 } }, pointLabels: { font: { size: 10 } } } }
+        }
+      });
+    }
+  });
+}
+
+// ══════════════════════════════════════════
+// GRIST API
+// ══════════════════════════════════════════
+let colDescriptions = {}; // { colId: description }
+
+async function fetchColDescriptions() {
+  try {
+    const meta = await grist.docApi.fetchTable('_grist_Tables_column');
+    if (meta && meta.colId) {
+      meta.colId.forEach((colId, i) => {
+        const desc = (meta.description[i] || '').trim();
+        if (desc) colDescriptions[colId] = desc;
+      });
+    }
+  } catch(e) {}
+}
+
+grist.ready({ requiredAccess: 'read table' });
+
+grist.onOptions(options => {
+  if (options && options.radarConfig) {
+    try {
+      const saved = JSON.parse(options.radarConfig);
+      // Compatibilité ancien format (tableau direct)
+      if (Array.isArray(saved))           { config = saved; }
+      else {
+        if (saved.config)                   config       = saved.config;
+        if (saved.titleCol !== undefined)   titleCol     = saved.titleCol;
+        if (saved.showPresent !== undefined) showPresent = saved.showPresent;
+      }
+    } catch(e) {}
+  }
+  document.getElementById('btn-present').style.display = showPresent ? '' : 'none';
+  rebuildGrid();
+  if (currentRecord) renderCharts(currentRecord);
+});
+
+grist.onRecords(records => {
+  if (!records || records.length === 0) return;
+  allRecords = records;
+  // ← FIX : toujours mettre à jour (résout le problème des lookupOne)
+  allColumns = Object.keys(records[0]).filter(k => k !== 'manualSort');
+  if (Object.keys(charts).length === 0) rebuildGrid();
+});
+
+let firstLoad = true;
+
+grist.onRecord(record => {
+  if (!record) return;
+  allColumns = Object.keys(record).filter(k => k !== 'manualSort');
+  if (firstLoad) { firstLoad = false; fetchColDescriptions(); }
+  const idx = allRecords.findIndex(r => r.id === record.id);
+  if (idx >= 0) currentIndex = idx;
+  renderCharts(record);
+});
+
+rebuildGrid();
+</script>
+</body>
+</html>
