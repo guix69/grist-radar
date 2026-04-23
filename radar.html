@@ -166,6 +166,7 @@
   <span id="alphaVal">15%</span>
 
   <span id="statusMsg">Connexion à Grist…</span>
+  <span style="font-size:11px; font-family:monospace; color:var(--text2); background:var(--bg3); border:1px solid var(--border); border-radius:4px; padding:2px 7px; white-space:nowrap; margin-left:4px;">v<span id="versionBadge"></span></span>
 </div>
 
 <!-- LÉGENDE -->
@@ -209,6 +210,8 @@ const PALETTE = [
 /* ═══════════════════════════════════════════════════
    ÉTAT
    ═══════════════════════════════════════════════════ */
+const VERSION = '1.2.0';
+
 let chart        = null;
 let allRows      = [];   // toutes les lignes reçues de Grist (fields plats)
 let filterCol    = '__none__'; // colonne booléenne de filtre
@@ -391,6 +394,7 @@ document.getElementById('alphaSlider').addEventListener('input', e => {
    INTÉGRATION GRIST
    ═══════════════════════════════════════════════════ */
 function setStatus(msg) {
+  document.getElementById('versionBadge').textContent = VERSION;
   document.getElementById('statusMsg').textContent = msg;
 }
 
