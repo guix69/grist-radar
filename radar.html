@@ -251,11 +251,12 @@ function populateColSelect(cols) {
   const sel = document.getElementById('colSelect');
   const prev = sel.value;
 
-  // Garder uniquement l'option "toutes" + colonnes non-numériques et non-NAME
   sel.innerHTML = '<option value="__none__">— Toutes les lignes —</option>';
 
+  // Toutes les colonnes sauf les axes numériques et le nom — y compris les colonnes vides
+  const excluded = new Set([NAME_COL, 'id', ...AXES]);
   cols
-    .filter(c => c !== NAME_COL && !AXES.includes(c))
+    .filter(c => !excluded.has(c))
     .forEach(c => {
       const opt = document.createElement('option');
       opt.value = c;
@@ -398,7 +399,7 @@ if (typeof grist !== 'undefined') {
 
   grist.ready({ requiredAccess: 'read table' });
 
-  // Réception des données (se déclenche aussi à chaque changement de sélection)
+  // Réception des données — se déclenche à chaque modification de la table
   grist.onRecords((records, mappings) => {
     if (!records || records.length === 0) {
       allRows = [];
@@ -407,15 +408,27 @@ if (typeof grist !== 'undefined') {
       return;
     }
 
-    // Aplatir les fields Grist
-    allRows = records.map(r => ({ id: r.id, ...r.fields }));
+    // Grist peut renvoyer les records sous deux formats :
+    //   format A : { id, fields: { col: val, … } }
+    //   format B : { id, col: val, … }  (fields directement à la racine)
+    allRows = records.map(r => {
+      if (r.fields && typeof r.fields === 'object') {
+        return { id: r.id, ...r.fields };
+      }
+      const row = {};
+      Object.keys(r).forEach(k => { row[k] = r[k]; });
+      return row;
+    });
 
-    // Détecter les colonnes disponibles (hors id)
-    const cols = Object.keys(allRows[0] || {}).filter(c => c !== 'id');
-    if (JSON.stringify(cols) !== JSON.stringify(knownCols)) {
-      knownCols = cols;
-      populateColSelect(cols);
-    }
+    // Collecter TOUTES les clés présentes dans n'importe quelle ligne
+    const colSet = new Set();
+    allRows.forEach(r => Object.keys(r).forEach(k => colSet.add(k)));
+    colSet.delete('id');
+    const cols = [...colSet];
+
+    // Toujours repeupler le sélecteur pour ne manquer aucune colonne
+    knownCols = cols;
+    populateColSelect(cols);
 
     setStatus(`${allRows.length} ligne(s) reçue(s).`);
     redraw();
