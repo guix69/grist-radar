@@ -231,7 +231,7 @@ const PALETTE = [
 /* ═══════════════════════════════════════════════════
    ÉTAT
    ═══════════════════════════════════════════════════ */
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 
 let chart        = null;
 let allRows      = [];   // toutes les lignes reçues de Grist (fields plats)
@@ -371,7 +371,7 @@ function redraw() {
 
   const alpha  = parseInt(document.getElementById('alphaSlider').value, 10);
   const colors = getColors();
-  const maxVal = Math.max(1, ...rows.flatMap(r => AXES.map(k => Number(r[k]) || 0)));
+  const maxVal = Math.max(1, ...rows.flatMap(r => axes.map(k => Number(r[k]) || 0)));
   const sugMax = Math.ceil(maxVal * 1.15 / 5) * 5 || 10;
   const step   = Math.max(1, Math.round(sugMax / 5));
 
