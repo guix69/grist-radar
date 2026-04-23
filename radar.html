@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Radar Chart — Grist Widget</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff;
+    --bg2: #f5f4f0;
+    --bg3: #eeede8;
+    --text: #1a1a18;
+    --text2: #5f5e5a;
+    --border: rgba(0,0,0,0.10);
+    --border2: rgba(0,0,0,0.18);
+    --radius: 10px;
+    --accent: #534AB7;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1c;
+      --bg2: #2a2a28;
+      --bg3: #333330;
+      --text: #f0efe8;
+      --text2: #9a9990;
+      --border: rgba(255,255,255,0.10);
+      --border2: rgba(255,255,255,0.18);
+      --accent: #8f87e8;
+    }
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* ── TOOLBAR ── */
+  #toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  #toolbar label {
+    font-size: 12px;
+    color: var(--text2);
+    white-space: nowrap;
+  }
+
+  #alphaSlider {
+    width: 80px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  #alphaVal {
+    font-size: 12px;
+    color: var(--text2);
+    min-width: 28px;
+  }
+
+  #colSelect {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border2);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    max-width: 180px;
+  }
+
+  #statusMsg {
+    font-size: 11px;
+    color: var(--text2);
+    margin-left: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+  }
+
+  /* ── LEGEND ── */
+  #legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    min-height: 36px;
+    align-items: center;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text2);
+  }
+
+  .legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* ── CHART ── */
+  #chartWrap {
+    flex: 1;
+    position: relative;
+    padding: 12px 16px;
+    min-height: 300px;
+  }
+
+  #radarChart {
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  /* ── EMPTY STATE ── */
+  #emptyState {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 8px;
+    color: var(--text2);
+    font-size: 13px;
+    padding: 40px;
+    text-align: center;
+  }
+
+  #emptyState svg {
+    opacity: 0.35;
+  }
+</style>
+</head>
+<body>
+
+<!-- TOOLBAR -->
+<div id="toolbar">
+  <label for="colSelect">Filtrer par colonne :</label>
+  <select id="colSelect">
+    <option value="__none__">— Toutes les lignes —</option>
+  </select>
+
+  <label for="alphaSlider" style="margin-left:8px;">Opacité :</label>
+  <input type="range" id="alphaSlider" min="0" max="50" value="15" step="1">
+  <span id="alphaVal">15%</span>
+
+  <span id="statusMsg">Connexion à Grist…</span>
+</div>
+
+<!-- LÉGENDE -->
+<div id="legend"></div>
+
+<!-- GRAPHIQUE -->
+<div id="chartWrap">
+  <canvas id="radarChart"
+    role="img"
+    aria-label="Graphique radar comparant plusieurs fournisseurs selon les critères tech, pro, coût, qualité et support.">
+    Données fournisseurs comparées sur : tech, pro, coût, qualité, support.
+  </canvas>
+</div>
+
+<!-- ÉTAT VIDE -->
+<div id="emptyState">
+  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>
+  </svg>
+  <span>Aucune ligne à afficher.<br>Vérifiez le filtre ou activez des lignes dans la table.</span>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   CONFIGURATION
+   ═══════════════════════════════════════════════════ */
+// Colonnes numériques affichées sur le radar
+const AXES = ['tech', 'pro', 'cout', 'qualite', 'support'];
+// Labels affichés sur le graphique
+const LABELS = ['Tech', 'Pro', 'Coût', 'Qualité', 'Support'];
+// Colonne contenant le nom du fournisseur
+const NAME_COL = 'Fournisseur';
+
+/* Palette couleurs (border + fill) */
+const PALETTE = [
+  '#534AB7','#0F6E56','#D85A30','#185FA5',
+  '#993556','#3B6D11','#854F0B','#A32D2D',
+  '#0C447C','#633806'
+];
+
+/* ═══════════════════════════════════════════════════
+   ÉTAT
+   ═══════════════════════════════════════════════════ */
+let chart        = null;
+let allRows      = [];   // toutes les lignes reçues de Grist (fields plats)
+let filterCol    = '__none__'; // colonne booléenne de filtre
+let knownCols    = [];   // toutes les colonnes disponibles
+
+/* ═══════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════ */
+function hexAlpha(hex, pct) {
+  return hex + Math.round(pct * 2.55).toString(16).padStart(2, '0');
+}
+
+function isDarkMode() {
+  return matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function getColors() {
+  return isDarkMode()
+    ? { grid: 'rgba(255,255,255,0.12)', tick: 'rgba(255,255,255,0.45)', label: '#c8c4f8' }
+    : { grid: 'rgba(0,0,0,0.09)',       tick: 'rgba(0,0,0,0.40)',       label: '#3C3489' };
+}
+
+/* Filtrer les lignes selon la colonne booléenne choisie */
+function filteredRows() {
+  if (filterCol === '__none__') return allRows;
+  return allRows.filter(row => {
+    const v = row[filterCol];
+    // Accepte true, 1, "1", "true", "oui", "yes"
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number')  return v !== 0;
+    if (typeof v === 'string')  return ['1','true','oui','yes','vrai'].includes(v.toLowerCase());
+    return false;
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   SÉLECTEUR DE COLONNE DE FILTRE
+   ═══════════════════════════════════════════════════ */
+function populateColSelect(cols) {
+  const sel = document.getElementById('colSelect');
+  const prev = sel.value;
+
+  // Garder uniquement l'option "toutes" + colonnes non-numériques et non-NAME
+  sel.innerHTML = '<option value="__none__">— Toutes les lignes —</option>';
+
+  cols
+    .filter(c => c !== NAME_COL && !AXES.includes(c))
+    .forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      sel.appendChild(opt);
+    });
+
+  // Restaurer la sélection précédente si elle existe encore
+  if ([...sel.options].some(o => o.value === prev)) {
+    sel.value = prev;
+  } else {
+    sel.value = '__none__';
+    filterCol = '__none__';
+  }
+}
+
+document.getElementById('colSelect').addEventListener('change', e => {
+  filterCol = e.target.value;
+  redraw();
+});
+
+/* ═══════════════════════════════════════════════════
+   LÉGENDE
+   ═══════════════════════════════════════════════════ */
+function buildLegend(rows) {
+  const el = document.getElementById('legend');
+  el.innerHTML = rows.map((row, i) => {
+    const color = PALETTE[i % PALETTE.length];
+    const name  = row[NAME_COL] || `#${row.id || i+1}`;
+    return `<span class="legend-item">
+      <span class="legend-swatch" style="background:${color}"></span>
+      <span>${name}</span>
+    </span>`;
+  }).join('');
+}
+
+/* ═══════════════════════════════════════════════════
+   GRAPHIQUE
+   ═══════════════════════════════════════════════════ */
+function redraw() {
+  const rows   = filteredRows();
+  const chartWrap  = document.getElementById('chartWrap');
+  const emptyState = document.getElementById('emptyState');
+
+  buildLegend(rows);
+
+  if (rows.length === 0) {
+    chartWrap.style.display  = 'none';
+    emptyState.style.display = 'flex';
+    if (chart) { chart.destroy(); chart = null; }
+    return;
+  }
+
+  chartWrap.style.display  = 'flex';
+  emptyState.style.display = 'none';
+
+  const alpha  = parseInt(document.getElementById('alphaSlider').value, 10);
+  const colors = getColors();
+  const maxVal = Math.max(1, ...rows.flatMap(r => AXES.map(k => Number(r[k]) || 0)));
+  const sugMax = Math.ceil(maxVal * 1.15 / 5) * 5 || 10;
+  const step   = Math.max(1, Math.round(sugMax / 5));
+
+  const datasets = rows.map((row, i) => {
+    const color = PALETTE[i % PALETTE.length];
+    return {
+      label:            row[NAME_COL] || `#${row.id || i+1}`,
+      data:             AXES.map(k => Number(row[k]) || 0),
+      borderColor:      color,
+      backgroundColor:  hexAlpha(color, alpha),
+      borderWidth:      2,
+      pointBackgroundColor: color,
+      pointRadius:      4,
+      pointHoverRadius: 6,
+    };
+  });
+
+  const config = {
+    type: 'radar',
+    data: { labels: LABELS, datasets },
+    options: {
+      responsive:          true,
+      maintainAspectRatio: false,
+      animation:           { duration: 300 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label} : ${ctx.raw}` } }
+      },
+      scales: {
+        r: {
+          beginAtZero: true,
+          suggestedMax: sugMax,
+          grid:        { color: colors.grid },
+          angleLines:  { color: colors.grid },
+          ticks: {
+            color:           colors.tick,
+            backdropColor:   'transparent',
+            font:            { size: 11 },
+            stepSize:        step,
+          },
+          pointLabels: {
+            color: colors.label,
+            font:  { size: 13, weight: '500' },
+          }
+        }
+      }
+    }
+  };
+
+  if (chart) {
+    chart.data    = config.data;
+    chart.options = config.options;
+    chart.update();
+  } else {
+    chart = new Chart(document.getElementById('radarChart'), config);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   SLIDER OPACITÉ
+   ═══════════════════════════════════════════════════ */
+document.getElementById('alphaSlider').addEventListener('input', e => {
+  document.getElementById('alphaVal').textContent = e.target.value + '%';
+  if (!chart) return;
+  const alpha = parseInt(e.target.value, 10);
+  chart.data.datasets.forEach((ds, i) => {
+    ds.backgroundColor = hexAlpha(PALETTE[i % PALETTE.length], alpha);
+  });
+  chart.update();
+});
+
+/* ═══════════════════════════════════════════════════
+   INTÉGRATION GRIST
+   ═══════════════════════════════════════════════════ */
+function setStatus(msg) {
+  document.getElementById('statusMsg').textContent = msg;
+}
+
+if (typeof grist !== 'undefined') {
+  setStatus('Connexion à Grist…');
+
+  grist.ready({ requiredAccess: 'read table' });
+
+  // Réception des données (se déclenche aussi à chaque changement de sélection)
+  grist.onRecords((records, mappings) => {
+    if (!records || records.length === 0) {
+      allRows = [];
+      setStatus('Table vide.');
+      redraw();
+      return;
+    }
+
+    // Aplatir les fields Grist
+    allRows = records.map(r => ({ id: r.id, ...r.fields }));
+
+    // Détecter les colonnes disponibles (hors id)
+    const cols = Object.keys(allRows[0] || {}).filter(c => c !== 'id');
+    if (JSON.stringify(cols) !== JSON.stringify(knownCols)) {
+      knownCols = cols;
+      populateColSelect(cols);
+    }
+
+    setStatus(`${allRows.length} ligne(s) reçue(s).`);
+    redraw();
+  });
+
+} else {
+  /* ─── MODE DÉMO (hors Grist) ─── */
+  setStatus('Mode démo — données d\'exemple.');
+  allRows = [
+    { id:1, Fournisseur:'AAAAAAAA',    tech:4, pro:5,  cout:4, qualite:3, support:2, Afficher: true  },
+    { id:2, Fournisseur:'BBBBBBB',     tech:1, pro:6,  cout:3, qualite:4, support:5, Afficher: true  },
+    { id:3, Fournisseur:'CCCCCCCC',    tech:9, pro:12, cout:7, qualite:2, support:5, Afficher: false },
+    { id:4, Fournisseur:'EEEEEEEEEEE', tech:1, pro:6,  cout:3, qualite:4, support:5, Afficher: true  },
+    { id:5, Fournisseur:'ZZZZZZZZZZ',  tech:9, pro:15, cout:1, qualite:7, support:3, Afficher: false },
+  ];
+  const cols = Object.keys(allRows[0]).filter(c => c !== 'id');
+  knownCols = cols;
+  populateColSelect(cols);
+  redraw();
+}
+</script>
+</body>
+</html>
