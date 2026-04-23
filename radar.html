@@ -34,11 +34,15 @@
     }
   }
 
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     font-family: 'Segoe UI', system-ui, sans-serif;
     background: var(--bg);
     color: var(--text);
-    min-height: 100vh;
     display: flex;
     flex-direction: column;
     gap: 0;
@@ -125,12 +129,8 @@
     flex: 1;
     position: relative;
     padding: 12px 16px;
-    min-height: 300px;
-  }
-
-  #radarChart {
-    width: 100% !important;
-    height: 100% !important;
+    overflow: hidden;
+    min-height: 0; /* essentiel pour que flex:1 fonctionne dans un iframe */
   }
 
   /* ── EMPTY STATE ── */
@@ -150,6 +150,23 @@
   #emptyState svg {
     opacity: 0.35;
   }
+
+  .axis-check {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text2);
+    cursor: pointer;
+    user-select: none;
+  }
+  .axis-check input[type=checkbox] {
+    accent-color: var(--accent);
+    width: 13px;
+    height: 13px;
+    cursor: pointer;
+    margin: 0;
+  }
 </style>
 </head>
 <body>
@@ -167,6 +184,12 @@
 
   <span id="statusMsg">Connexion à Grist…</span>
   <span style="font-size:11px; font-family:monospace; color:var(--text2); background:var(--bg3); border:1px solid var(--border); border-radius:4px; padding:2px 7px; white-space:nowrap; margin-left:4px;">v<span id="versionBadge"></span></span>
+</div>
+
+<!-- AXES SELECTOR (visible uniquement hors Grist ou si pas de mapping) -->
+<div id="axesBar" style="display:none; align-items:center; gap:8px; padding:7px 14px; background:var(--bg2); border-bottom:1px solid var(--border); flex-wrap:wrap;">
+  <span style="font-size:12px; color:var(--text2); white-space:nowrap;">Axes du radar :</span>
+  <div id="axesCheckboxes" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
 </div>
 
 <!-- LÉGENDE -->
@@ -193,11 +216,9 @@
 /* ═══════════════════════════════════════════════════
    CONFIGURATION
    ═══════════════════════════════════════════════════ */
-// Colonnes numériques affichées sur le radar
-const AXES = ['tech', 'pro', 'cout', 'qualite', 'support'];
-// Labels affichés sur le graphique
-const LABELS = ['Tech', 'Pro', 'Coût', 'Qualité', 'Support'];
-// Colonne contenant le nom du fournisseur
+// Colonnes radar par défaut (fallback si pas de mapping Grist)
+const DEFAULT_AXES = ['tech', 'pro', 'cout', 'qualite', 'support'];
+// Colonne contenant le nom du fournisseur (fallback)
 const NAME_COL = 'Fournisseur';
 
 /* Palette couleurs (border + fill) */
@@ -210,12 +231,14 @@ const PALETTE = [
 /* ═══════════════════════════════════════════════════
    ÉTAT
    ═══════════════════════════════════════════════════ */
-const VERSION = '1.2.0';
+const VERSION = '1.4.0';
 
 let chart        = null;
 let allRows      = [];   // toutes les lignes reçues de Grist (fields plats)
 let filterCol    = '__none__'; // colonne booléenne de filtre
 let knownCols    = [];   // toutes les colonnes disponibles
+let activeAxes   = [...DEFAULT_AXES]; // axes actifs sur le radar
+let nameCol      = NAME_COL;          // colonne nom active
 
 /* ═══════════════════════════════════════════════════
    HELPERS
@@ -248,6 +271,34 @@ function filteredRows() {
 }
 
 /* ═══════════════════════════════════════════════════
+   SÉLECTEUR D'AXES (mode manuel, hors mapping Grist)
+   ═══════════════════════════════════════════════════ */
+function buildAxesBar(cols) {
+  const bar  = document.getElementById('axesBar');
+  const wrap = document.getElementById('axesCheckboxes');
+  // Colonnes numériques candidates : toutes sauf nameCol, filterCol, id
+  const excluded = new Set([nameCol, 'id']);
+  const candidates = cols.filter(c => !excluded.has(c));
+
+  if (candidates.length === 0) { bar.style.display = 'none'; return; }
+
+  bar.style.display = 'flex';
+  wrap.innerHTML = '';
+
+  candidates.forEach(col => {
+    const checked = activeAxes.includes(col);
+    const lbl = document.createElement('label');
+    lbl.className = 'axis-check';
+    lbl.innerHTML = `<input type="checkbox" value="${col}" ${checked ? 'checked' : ''}><span>${col}</span>`;
+    lbl.querySelector('input').addEventListener('change', () => {
+      activeAxes = [...wrap.querySelectorAll('input:checked')].map(i => i.value);
+      redraw();
+    });
+    wrap.appendChild(lbl);
+  });
+}
+
+/* ═══════════════════════════════════════════════════
    SÉLECTEUR DE COLONNE DE FILTRE
    ═══════════════════════════════════════════════════ */
 function populateColSelect(cols) {
@@ -257,7 +308,7 @@ function populateColSelect(cols) {
   sel.innerHTML = '<option value="__none__">— Toutes les lignes —</option>';
 
   // Toutes les colonnes sauf les axes numériques et le nom — y compris les colonnes vides
-  const excluded = new Set([NAME_COL, 'id', ...AXES]);
+  const excluded = new Set([nameCol, 'id', ...activeAxes]);
   cols
     .filter(c => !excluded.has(c))
     .forEach(c => {
@@ -288,7 +339,7 @@ function buildLegend(rows) {
   const el = document.getElementById('legend');
   el.innerHTML = rows.map((row, i) => {
     const color = PALETTE[i % PALETTE.length];
-    const name  = row[NAME_COL] || `#${row.id || i+1}`;
+    const name  = row[nameCol] || `#${row.id || i+1}`;
     return `<span class="legend-item">
       <span class="legend-swatch" style="background:${color}"></span>
       <span>${name}</span>
@@ -301,6 +352,8 @@ function buildLegend(rows) {
    ═══════════════════════════════════════════════════ */
 function redraw() {
   const rows   = filteredRows();
+  const axes   = activeAxes.filter(k => k); // colonnes radar actives
+  const labels = axes.map(k => k);          // labels = noms de colonnes
   const chartWrap  = document.getElementById('chartWrap');
   const emptyState = document.getElementById('emptyState');
 
@@ -325,8 +378,8 @@ function redraw() {
   const datasets = rows.map((row, i) => {
     const color = PALETTE[i % PALETTE.length];
     return {
-      label:            row[NAME_COL] || `#${row.id || i+1}`,
-      data:             AXES.map(k => Number(row[k]) || 0),
+      label:            row[nameCol] || `#${row.id || i+1}`,
+      data:             axes.map(k => Number(row[k]) || 0),
       borderColor:      color,
       backgroundColor:  hexAlpha(color, alpha),
       borderWidth:      2,
@@ -338,7 +391,7 @@ function redraw() {
 
   const config = {
     type: 'radar',
-    data: { labels: LABELS, datasets },
+    data: { labels: labels, datasets },
     options: {
       responsive:          true,
       maintainAspectRatio: false,
@@ -371,7 +424,7 @@ function redraw() {
   if (chart) {
     chart.data    = config.data;
     chart.options = config.options;
-    chart.update();
+    chart.update('none');
   } else {
     chart = new Chart(document.getElementById('radarChart'), config);
   }
@@ -391,6 +444,29 @@ document.getElementById('alphaSlider').addEventListener('input', e => {
 });
 
 /* ═══════════════════════════════════════════════════
+   RESPONSIVE — ResizeObserver
+   ═══════════════════════════════════════════════════ */
+(function() {
+  const wrap = document.getElementById('chartWrap');
+  // Resize le canvas pour qu'il remplisse exactement son conteneur
+  function fitCanvas() {
+    const canvas = document.getElementById('radarChart');
+    if (!canvas) return;
+    const w = wrap.clientWidth  - 32; // padding 16px x2
+    const h = wrap.clientHeight - 24; // padding 12px x2
+    if (w <= 0 || h <= 0) return;
+    canvas.style.width  = w + 'px';
+    canvas.style.height = h + 'px';
+    if (chart) chart.resize();
+  }
+
+  const ro = new ResizeObserver(() => fitCanvas());
+  ro.observe(wrap);
+  // Aussi écouter le resize de la fenêtre (fallback pour vieux navigateurs)
+  window.addEventListener('resize', fitCanvas);
+})();
+
+/* ═══════════════════════════════════════════════════
    INTÉGRATION GRIST
    ═══════════════════════════════════════════════════ */
 function setStatus(msg) {
@@ -401,7 +477,33 @@ function setStatus(msg) {
 if (typeof grist !== 'undefined') {
   setStatus('Connexion à Grist…');
 
-  grist.ready({ requiredAccess: 'read table' });
+  grist.ready({
+    requiredAccess: 'read table',
+    columns: [
+      {
+        name: 'label',
+        title: 'Nom (étiquette)',
+        optional: false,
+        type: 'Text',
+        description: 'Colonne contenant le nom affiché pour chaque fournisseur'
+      },
+      {
+        name: 'axes',
+        title: 'Axes du radar',
+        optional: true,
+        type: 'Numeric',
+        allowMultiple: true,
+        description: 'Colonnes numériques à afficher sur le radar (sélection multiple)'
+      },
+      {
+        name: 'filter',
+        title: 'Filtre (booléen)',
+        optional: true,
+        type: 'Bool',
+        description: 'Colonne booléenne pour filtrer les lignes affichées'
+      }
+    ]
+  });
 
   // Réception des données — se déclenche à chaque modification de la table
   grist.onRecords((records, mappings) => {
@@ -410,6 +512,16 @@ if (typeof grist !== 'undefined') {
       setStatus('Table vide.');
       redraw();
       return;
+    }
+
+    // Lire les mappings de colonnes configurés dans le panneau Grist
+    if (mappings) {
+      if (mappings.label)  nameCol = mappings.label;
+      if (mappings.axes && mappings.axes.length > 0) {
+        activeAxes = Array.isArray(mappings.axes) ? mappings.axes : [mappings.axes];
+        document.getElementById('axesBar').style.display = 'none'; // géré par Grist
+      }
+      if (mappings.filter) filterCol = mappings.filter;
     }
 
     // Grist peut renvoyer les records sous deux formats :
@@ -430,9 +542,21 @@ if (typeof grist !== 'undefined') {
     colSet.delete('id');
     const cols = [...colSet];
 
-    // Toujours repeupler le sélecteur pour ne manquer aucune colonne
     knownCols = cols;
     populateColSelect(cols);
+
+    // Si pas de mapping axes → afficher la barre de sélection manuelle
+    if (!mappings || !mappings.axes || mappings.axes.length === 0) {
+      // Initialiser activeAxes sur les colonnes numériques si c'est la première fois
+      if (activeAxes.every(a => !cols.includes(a))) {
+        activeAxes = cols.filter(c => {
+          const excluded = new Set([nameCol, 'id', filterCol]);
+          if (excluded.has(c)) return false;
+          return allRows.some(r => typeof r[c] === 'number');
+        });
+      }
+      buildAxesBar(cols);
+    }
 
     setStatus(`${allRows.length} ligne(s) reçue(s).`);
     redraw();
@@ -451,6 +575,7 @@ if (typeof grist !== 'undefined') {
   const cols = Object.keys(allRows[0]).filter(c => c !== 'id');
   knownCols = cols;
   populateColSelect(cols);
+  buildAxesBar(cols);
   redraw();
 }
 </script>
